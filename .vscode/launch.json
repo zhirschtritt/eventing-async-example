@@ -1,0 +1,20 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Server",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/cmd/server",
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PORT": "8080",
+        "DB_CONN_STRING": "postgres://postgres:postgres@localhost:5444/eventing_wal?sslmode=disable"
+      },
+      "args": ["start"],
+      "showLog": true,
+      "console": "integratedTerminal"
+    }
+  ]
+}

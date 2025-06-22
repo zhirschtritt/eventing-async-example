@@ -1,0 +1,17 @@
+{
+  "name": "testing",
+  "version": "1.0.0",
+  "description": "k6 load tests for user API",
+  "main": "index.js",
+  "scripts": {
+    "test": "K6_WEB_DASHBOARD=true k6 run src/user-load-test.ts --env BASE_URL=http://localhost:8080"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@total-typescript/tsconfig": "^1.0.4",
+    "@types/k6": "^0.54.1",
+    "@types/node": "^24.0.3",
+    "typescript": "^5.8.3"
+  }
+}
