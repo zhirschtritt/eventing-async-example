@@ -2,12 +2,12 @@ package events
 
 import "time"
 
-type Event interface {
-	ID() string
-	Type() string
-	AggregateType() string
-	AggregateID() string
-	Version() int64
-	Timestamp() time.Time
-	Data() map[string]interface{}
+type Event struct {
+	ID            string                 `json:"id"`
+	Type          string                 `json:"type"`
+	AggregateType string                 `json:"aggregate_type"`
+	AggregateID   string                 `json:"aggregate_id"`
+	Version       int64                  `json:"version"`
+	Timestamp     time.Time              `json:"timestamp"`
+	Data          map[string]interface{} `json:"data"`
 }

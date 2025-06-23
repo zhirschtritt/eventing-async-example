@@ -26,40 +26,40 @@ func NewUserService(userRepo UserRepository, eventConsumer events.EventConsumer)
 }
 
 func (s *UserService) CreateUser(ctx context.Context, req CreateUserRequest) (*User, error) {
-	existingUser, err := s.userRepo.GetByEmail(req.Email)
-	if err == nil && existingUser != nil {
-		return nil, ErrUserAlreadyExists
-	}
+	var user *User
 
-	now := time.Now()
-	user := &User{
-		ID:        uuid.New().String(),
-		Email:     req.Email,
-		Name:      req.Name,
-		CreatedAt: now,
-		UpdatedAt: now,
-	}
+	err := s.userRepo.DoInTx(ctx, func(ctx context.Context) error {
 
-	if err := s.userRepo.Create(user); err != nil {
-		return nil, fmt.Errorf("failed to create user: %w", err)
-	}
-
-	event := &UserCreatedEvent{
-		eventID:     uuid.New().String(),
-		aggregateID: user.ID,
-		timestamp:   now,
-		userID:      user.ID,
-		email:       user.Email,
-		name:        user.Name,
-	}
-
-	if err := s.eventConsumer.Consume(ctx, event); err != nil {
-		if errors.Is(err, events.EventConsumerErrorFull) {
-			return nil, ErrEventConsumerFull
+		existingUser, err := s.userRepo.GetByEmail(ctx, req.Email)
+		if err == nil && existingUser != nil {
+			return ErrUserAlreadyExists
 		}
 
-		return nil, fmt.Errorf("user created but failed to publish event: %w", err)
-	}
+		now := time.Now()
+		user = &User{
+			ID:        uuid.New().String(),
+			Email:     req.Email,
+			Name:      req.Name,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
 
-	return user, nil
+		if err := s.userRepo.Create(ctx, user); err != nil {
+			return fmt.Errorf("failed to create user: %w", err)
+		}
+
+		event := NewUserCreatedEvent(user)
+
+		if err := s.eventConsumer.Consume(ctx, event.Event); err != nil {
+			if errors.Is(err, events.EventConsumerErrorFull) {
+				return ErrEventConsumerFull
+			}
+
+			return fmt.Errorf("user created but failed to publish event: %w", err)
+		}
+
+		return nil
+	})
+
+	return user, err
 }

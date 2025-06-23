@@ -1,44 +1,35 @@
 package domain
 
-import "time"
+import (
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/zhirschtritt/eventing/internal/events"
+)
+
+type UserCreatedEventData struct {
+	Email string `json:"email"`
+	Name  string `json:"name"`
+}
 
 type UserCreatedEvent struct {
-	eventID     string
-	aggregateID string
-	timestamp   time.Time
-	userID      string
-	email       string
-	name        string
+	events.Event
+	Data UserCreatedEventData `json:"data"`
 }
 
-func (e *UserCreatedEvent) ID() string {
-	return e.eventID
-}
-
-func (e *UserCreatedEvent) Type() string {
-	return "user.created"
-}
-
-func (e *UserCreatedEvent) AggregateType() string {
-	return "user"
-}
-
-func (e *UserCreatedEvent) AggregateID() string {
-	return e.aggregateID
-}
-
-func (e *UserCreatedEvent) Version() int64 {
-	return 1
-}
-
-func (e *UserCreatedEvent) Timestamp() time.Time {
-	return e.timestamp
-}
-
-func (e *UserCreatedEvent) Data() map[string]interface{} {
-	return map[string]interface{}{
-		"user_id": e.userID,
-		"email":   e.email,
-		"name":    e.name,
+func NewUserCreatedEvent(user *User) *UserCreatedEvent {
+	return &UserCreatedEvent{
+		Event: events.Event{
+			ID:            uuid.New().String(),
+			Type:          "user.created",
+			AggregateType: "user",
+			AggregateID:   user.ID,
+			Version:       1,
+			Timestamp:     time.Now(),
+		},
+		Data: UserCreatedEventData{
+			Email: user.Email,
+			Name:  user.Name,
+		},
 	}
 }

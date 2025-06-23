@@ -22,8 +22,9 @@ import (
 )
 
 type Config struct {
-	Port         string `env:"PORT" envDefault:"8080"`
-	DBConnString string `env:"DB_CONN_STRING" envDefault:"postgres://postgres:postgres@localhost:5444/eventing_wal?sslmode=disable"`
+	Port              string `env:"PORT" envDefault:"8080"`
+	DBConnString      string `env:"DB_CONN_STRING" envDefault:"postgres://postgres:postgres@localhost:5444/eventing_wal?sslmode=disable"`
+	EventConsumerType string `env:"EVENT_CONSUMER_TYPE" envDefault:"gochannel"`
 }
 
 type Server struct {
@@ -44,8 +45,6 @@ type HealthResponse struct {
 }
 
 func NewServer() *Server {
-	ctx := context.Background()
-
 	startTime := time.Now()
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
@@ -59,7 +58,7 @@ func NewServer() *Server {
 		os.Exit(1)
 	}
 
-	logger.Info("configuration loaded", "port", config.Port, "db_conn_string", config.DBConnString)
+	logger.Info("configuration loaded", "port", config.Port, "db_conn_string", config.DBConnString, "event_consumer_type", config.EventConsumerType)
 
 	server := &Server{
 		logger:    logger,
@@ -71,15 +70,11 @@ func NewServer() *Server {
 		logger.Error("failed to initialize database", "error", err)
 		os.Exit(1)
 	}
-	server.eventConsumer = events.NewConsumer(
-		repository.NewDBEventsRepository(server.db),
-		events.ConsumerOptions{
-			// buffer size of 1000 if average request takes 100ms to achieve 10k RPS
-			BufferSize:   1000,
-			BatchSize:    100,
-			BatchTimeout: 100 * time.Millisecond,
-		})
-	server.eventConsumer.Start(ctx)
+
+	if err := server.initEventConsumer(); err != nil {
+		logger.Error("failed to initialize event consumer", "error", err)
+		os.Exit(1)
+	}
 
 	if err := server.initUserService(); err != nil {
 		logger.Error("failed to initialize user service", "error", err)
@@ -185,6 +180,50 @@ func (s *Server) initDatabase() error {
 
 	if err := migrator.Up(); err != nil {
 		return fmt.Errorf("failed to run migrations: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Server) initEventConsumer() error {
+	ctx := context.Background()
+
+	if s.config.EventConsumerType == "gochannel" {
+		consumer := events.NewConsumer(
+			repository.NewDBEventsRepository(s.db),
+			events.ConsumerOptions{
+				BufferSize:   1000,
+				BatchSize:    100,
+				BatchTimeout: 100 * time.Millisecond,
+				WorkerCount:  4,
+			})
+
+		s.eventConsumer = consumer
+		s.eventConsumer.Start(ctx)
+		s.logger.Info("initialized GoChannel consumer")
+	} else if s.config.EventConsumerType == "wal" {
+		walConsumer, err := events.NewWALConsumer(
+			repository.NewDBEventsRepository(s.db),
+			events.WALConsumerOptions{
+				BufferSize:       1000,
+				BatchSize:        100,
+				BatchTimeout:     100 * time.Millisecond,
+				WALDir:           "./wal",
+				WALPrefix:        "event_",
+				SegmentThreshold: 1000,
+				MaxSegments:      10,
+				IsInSyncDiskMode: false,
+				WorkerCount:      4,
+			})
+		if err != nil {
+			return fmt.Errorf("failed to create WAL consumer: %w", err)
+		}
+
+		s.eventConsumer = walConsumer
+		s.eventConsumer.Start(ctx)
+		s.logger.Info("initialized WAL consumer")
+	} else {
+		return fmt.Errorf("unsupported event consumer type: %s", s.config.EventConsumerType)
 	}
 
 	return nil

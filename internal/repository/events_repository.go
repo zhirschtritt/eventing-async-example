@@ -20,8 +20,8 @@ func NewDBEventsRepository(db *pgxpool.Pool) *DBEventsRepository {
 	}
 }
 
-func (r *DBEventsRepository) Insert(event events.Event) error {
-	data, err := json.Marshal(event.Data())
+func (r *DBEventsRepository) Insert(ctx context.Context, event events.Event) error {
+	data, err := json.Marshal(event.Data)
 	if err != nil {
 		return fmt.Errorf("failed to marshal event data: %w", err)
 	}
@@ -31,8 +31,8 @@ func (r *DBEventsRepository) Insert(event events.Event) error {
 		VALUES ($1, $2, $3, $4, $5, $6)
 	`
 
-	_, err = r.db.Exec(context.Background(), query,
-		event.Type(), event.AggregateType(), event.AggregateID(), event.Version(), event.Timestamp(), data)
+	_, err = r.db.Exec(ctx, query,
+		event.Type, event.AggregateType, event.AggregateID, event.Version, event.Timestamp, data)
 
 	if err != nil {
 		return fmt.Errorf("failed to insert event: %w", err)
@@ -41,7 +41,7 @@ func (r *DBEventsRepository) Insert(event events.Event) error {
 	return nil
 }
 
-func (r *DBEventsRepository) BulkInsert(events []events.Event) error {
+func (r *DBEventsRepository) BulkInsert(ctx context.Context, events []events.Event) error {
 	if len(events) == 0 {
 		return nil
 	}
@@ -56,7 +56,7 @@ func (r *DBEventsRepository) BulkInsert(events []events.Event) error {
 	argIndex := 1
 
 	for i, event := range events {
-		data, err := json.Marshal(event.Data())
+		data, err := json.Marshal(event.Data)
 		if err != nil {
 			return fmt.Errorf("failed to marshal event data: %w", err)
 		}
@@ -64,13 +64,13 @@ func (r *DBEventsRepository) BulkInsert(events []events.Event) error {
 		values[i] = fmt.Sprintf("($%d, $%d, $%d, $%d, $%d, $%d)",
 			argIndex, argIndex+1, argIndex+2, argIndex+3, argIndex+4, argIndex+5)
 
-		args = append(args, event.Type(), event.AggregateType(), event.AggregateID(), event.Version(), event.Timestamp(), data)
+		args = append(args, event.Type, event.AggregateType, event.AggregateID, event.Version, event.Timestamp, data)
 		argIndex += 6
 	}
 
 	query += strings.Join(values, ", ")
 
-	_, err := r.db.Exec(context.Background(), query, args...)
+	_, err := r.db.Exec(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("failed to bulk insert events: %w", err)
 	}

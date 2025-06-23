@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/zhirschtritt/eventing/internal/domain"
 )
@@ -18,13 +20,49 @@ func NewDBUserRepository(db *pgxpool.Pool) *DBUserRepository {
 	}
 }
 
-func (r *DBUserRepository) Create(user *domain.User) error {
+type txCtxKey struct{}
+
+func WithTx(ctx context.Context, tx pgx.Tx) context.Context {
+	return context.WithValue(ctx, txCtxKey{}, tx)
+}
+
+func GetTx(ctx context.Context) (pgx.Tx, bool) {
+	tx, ok := ctx.Value(txCtxKey{}).(pgx.Tx)
+	return tx, ok
+}
+
+func (r *DBUserRepository) DoInTx(ctx context.Context, fn func(ctx context.Context) error) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if err := fn(WithTx(ctx, tx)); err != nil {
+		return fmt.Errorf("transaction failed: %w", err)
+	}
+
+	return tx.Commit(ctx)
+}
+
+type executor interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}
+
+func (r *DBUserRepository) Create(ctx context.Context, user *domain.User) error {
+	var executor executor = r.db
+
+	tx, ok := GetTx(ctx)
+	if ok {
+		executor = tx
+	}
+
 	query := `
 		INSERT INTO users (id, email, name, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5)
 	`
 
-	_, err := r.db.Exec(context.Background(), query,
+	_, err := executor.Exec(context.Background(), query,
 		user.ID, user.Email, user.Name, user.CreatedAt, user.UpdatedAt)
 
 	if err != nil {
@@ -34,7 +72,17 @@ func (r *DBUserRepository) Create(user *domain.User) error {
 	return nil
 }
 
-func (r *DBUserRepository) GetByID(id string) (*domain.User, error) {
+type queryer interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+func (r *DBUserRepository) GetByID(ctx context.Context, id string) (*domain.User, error) {
+	var executor queryer = r.db
+	tx, ok := GetTx(ctx)
+	if ok {
+		executor = tx
+	}
+
 	query := `
 		SELECT id, email, name, created_at, updated_at
 		FROM users
@@ -42,7 +90,7 @@ func (r *DBUserRepository) GetByID(id string) (*domain.User, error) {
 	`
 
 	var user domain.User
-	err := r.db.QueryRow(context.Background(), query, id).Scan(
+	err := executor.QueryRow(context.Background(), query, id).Scan(
 		&user.ID, &user.Email, &user.Name, &user.CreatedAt, &user.UpdatedAt)
 
 	if err != nil {
@@ -52,7 +100,13 @@ func (r *DBUserRepository) GetByID(id string) (*domain.User, error) {
 	return &user, nil
 }
 
-func (r *DBUserRepository) GetByEmail(email string) (*domain.User, error) {
+func (r *DBUserRepository) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
+	var executor queryer = r.db
+	tx, ok := GetTx(ctx)
+	if ok {
+		executor = tx
+	}
+
 	query := `
 		SELECT id, email, name, created_at, updated_at
 		FROM users
@@ -60,7 +114,7 @@ func (r *DBUserRepository) GetByEmail(email string) (*domain.User, error) {
 	`
 
 	var user domain.User
-	err := r.db.QueryRow(context.Background(), query, email).Scan(
+	err := executor.QueryRow(context.Background(), query, email).Scan(
 		&user.ID, &user.Email, &user.Name, &user.CreatedAt, &user.UpdatedAt)
 
 	if err != nil {

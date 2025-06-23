@@ -3,6 +3,8 @@ package main
 import (
 	"os"
 
+	_ "github.com/outrigdev/outrig/autoinit"
+
 	"github.com/zhirschtritt/eventing/internal/server"
 )
 
